@@ -10,34 +10,15 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdubKmAj92ODOhGb6VeWoloC_
 
 st.set_page_config(page_title="Lótusz Kontroll", layout="wide")
 
-# STÍLUS: Maximális olvashatóság és fix gombok
+# STÍLUS: Maximális kontraszt és olvashatóság
 st.markdown("""
     <style>
-    .termek-nev { font-size: 18px; font-weight: bold; color: #000000 !important; margin-bottom: 2px; }
-    .info-text { font-size: 14px; color: #222 !important; font-weight: 500; }
-    .total-display { font-size: 22px; font-weight: bold; color: #007bff; border-left: 4px solid #007bff; padding-left: 10px; }
-    
-    /* Feliratok (Karton, Darab stb.) megerősítése */
-    .stNumberInput label { 
-        color: #000 !important; 
-        font-weight: bold !important; 
-        font-size: 14px !important; 
-        display: block !important; 
-    }
-
-    /* Lebegő Mentés Sáv az oldal alján */
-    .sticky-footer {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        background-color: #ffffff;
-        padding: 15px;
-        border-top: 3px solid #007bff;
-        z-index: 1000;
-        box-shadow: 0px -5px 10px rgba(0,0,0,0.1);
-    }
-    .block-container { padding-bottom: 150px; } /* Hely a gomboknak */
+    .termek-nev { font-size: 18px; font-weight: bold; color: #000 !important; margin-bottom: 0px; }
+    .info-text { font-size: 13px; color: #333 !important; font-weight: 600; }
+    .total-display { font-size: 22px; font-weight: bold; color: #007bff; }
+    .stNumberInput label { color: #000 !important; font-weight: bold !important; font-size: 14px !important; }
+    /* Ellenőrző lista stílusa */
+    .summary-box { background-color: #f0f7ff; border: 2px solid #007bff; padding: 10px; border-radius: 10px; margin-bottom: 20px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -53,7 +34,7 @@ def load_data():
 df = load_data()
 
 # --- FUNKCIÓK ---
-def clear_tab(p_code):
+def clear_current_tab(p_code):
     for key in list(st.session_state.keys()):
         if key.startswith((f"{p_code}k_", f"{p_code}d_", "zt_", "zb_")):
             st.session_state[key] = 0.0 if key.startswith('z') else 0
@@ -63,7 +44,7 @@ def clear_tab(p_code):
 st.sidebar.title("⚓ Lótusz Menü")
 funkcio = st.sidebar.radio("Válassz:", ["📦 Raktár Beszállítás", "🚚 Pult töltés", "🍹 Pult zárás", "💾 Mentés"])
 
-if df is None: st.error("Fájl hiba! Ellenőrizd a csv-t."); st.stop()
+if df is None: st.error("Hiba: lotusz_alap.csv nem található!"); st.stop()
 nev_col = df.columns[0]
 
 p_code = "r" if "Raktár" in funkcio else ("t" if "Töltés" in funkcio else "z")
@@ -71,80 +52,74 @@ tab_nev = "Raktár" if p_code == "r" else ("Töltés" if p_code == "t" else "Zá
 
 if funkcio != "💾 Mentés":
     st.title(f"{funkcio}")
-    kereses = st.text_input("🔍 Termék gyorskereső...", "", key=f"k_{p_code}")
-
-    # DINAMIKUS ELLENŐRZŐ LISTA FENT
-    summary_list = {}
+    
+    # 1. ELLENŐRZŐ LISTA ÉS TÖRLÉS GOMB (FENT, HOGY MINDIG LÁTSZON)
+    summary_dict = {}
     for idx, row in df.iterrows():
-        nev = str(row[nev_col]).strip()
         try: valto = float(str(row.iloc[26]).replace(',', '.'))
         except: valto = 6.0
         
         if p_code == "z":
-            total = float(st.session_state.get(f"zt_{idx}", 0)) + float(st.session_state.get(f"zb_{idx}", 0))
-            if total > 0: summary_list[nev] = f"{total} üveg"
+            t = float(st.session_state.get(f"zt_{idx}", 0))
+            b = float(st.session_state.get(f"zb_{idx}", 0))
+            if (t + b) > 0: summary_dict[str(row[nev_col])] = f"{t+b} üveg"
         else:
-            total = (int(st.session_state.get(f"{p_code}k_{idx}", 0)) * valto) + int(st.session_state.get(f"{p_code}d_{idx}", 0))
-            if total > 0: summary_list[nev] = f"{int(total)} db"
+            k = int(st.session_state.get(f"{p_code}k_{idx}", 0))
+            d = int(st.session_state.get(f"{p_code}d_{idx}", 0))
+            if (k * valto + d) > 0: summary_dict[str(row[nev_col])] = f"{int(k * valto + d)} db"
 
-    if summary_list:
-        with st.expander("📋 AKTUÁLIS ELLENŐRZŐ LISTA", expanded=True):
-            cols = st.columns(3)
-            for i, (k, v) in enumerate(summary_list.items()):
-                cols[i % 3].info(f"**{k}**: {v}")
+    if summary_dict:
+        st.markdown('<div class="summary-box">', unsafe_allow_html=True)
+        st.subheader(f"📋 {tab_nev} Ellenőrző Lista")
+        c_list = st.columns(3)
+        for i, (k, v) in enumerate(summary_dict.items()):
+            c_list[i % 3].write(f"**{k}**: {v}")
+        
+        if st.button(f"🗑️ ÖSSZES {tab_nev.upper()} TÖRLÉSE", type="secondary", use_container_width=True):
+            clear_current_tab(p_code)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # 2. KERESŐ
+    kereses = st.text_input("🔍 Keresés termékre...", "")
 
     st.divider()
 
-    # --- TERMÉK LISTA FELDOLGOZÁSA (A Tonic-on is túl) ---
-    for idx, row in df.iterrows():
+    # 3. TERMÉKEK (BIZTONSÁGI CIKLUS - NEM ÁLL LE A LISTA)
+    # Csoportosítva jelenítjük meg, hogy ne szálljon el a Streamlit
+    filtered_df = df[df[nev_col].str.contains(kereses, case=False, na=False)]
+    
+    for idx, row in filtered_df.iterrows():
         nev = str(row[nev_col]).strip()
-        if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
-        
         try: valto = float(str(row.iloc[26]).replace(',', '.'))
         except: valto = 6.0
 
         with st.container():
-            c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-            with c1:
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            with col1:
                 st.markdown(f"<p class='termek-nev'>{nev}</p>", unsafe_allow_html=True)
                 st.markdown(f"<p class='info-text'>{int(valto)} db / Karton</p>", unsafe_allow_html=True)
             
             if p_code == "z":
-                v1 = c2.number_input("Teli (db)", min_value=0.0, step=1.0, key=f"zt_{idx}")
-                v2 = c3.number_input("Bontott", min_value=0.0, step=0.25, key=f"zb_{idx}")
-                total_row = v1 + v2
-                label = "üveg"
+                v1 = col2.number_input("Teli", min_value=0.0, step=1.0, key=f"zt_{idx}")
+                v2 = col3.number_input("Bont", min_value=0.0, step=0.25, key=f"zb_{idx}")
+                osszes = v1 + v2
+                unit = "üveg"
             else:
-                v1 = c2.number_input("Karton", min_value=0, step=1, key=f"{p_code}k_{idx}")
-                v2 = c3.number_input("Darab", min_value=0, step=1, key=f"{p_code}d_{idx}")
-                total_row = (v1 * valto) + v2
-                label = "db"
+                v1 = col2.number_input("Karton", min_value=0, step=1, key=f"{p_code}k_{idx}")
+                v2 = col3.number_input("Darab", min_value=0, step=1, key=f"{p_code}d_{idx}")
+                osszes = (v1 * valto) + v2
+                unit = "db"
 
-            with c4:
-                if total_row > 0:
-                    st.markdown(f"<p class='total-display'>{int(total_row) if label=='db' else total_row} {label}</p>", unsafe_allow_html=True)
-            st.divider()
+            with col4:
+                if osszes > 0:
+                    st.markdown(f"<p class='total-display'>{int(osszes) if unit=='db' else osszes} {unit}</p>", unsafe_allow_html=True)
+            st.markdown("---")
 
-    # --- FIXÁLT MENTÉS SÁV ---
-    st.markdown(f"""
-        <div class="sticky-footer">
-            <table style="width:100%">
-                <tr>
-                    <td style="width:50%"><button onclick="window.location.reload();" style="width:100%; padding:10px; background:#ff4b4b; color:white; border:none; border-radius:5px; font-weight:bold;">🗑️ LISTA TÖRLÉSE</button></td>
-                    <td style="width:50%"><button style="width:100%; padding:10px; background:#007bff; color:white; border:none; border-radius:5px; font-weight:bold;">🚀 {tab_nev} BEKÜLDÉSE</button></td>
-                </tr>
-            </table>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # Streamlit gombok a funkciókhoz (mert a HTML gomb csak dísz a design miatt)
-    f_c1, f_c2 = st.columns(2)
-    with f_c1: 
-        if st.button("🗑️ NULLÁZÁS (Minden mező törlése)", use_container_width=True): clear_tab(p_code)
-    with f_c2:
-        if st.button(f"🚀 {tab_nev} MENTÉSE", type="primary", use_container_width=True):
-            st.success("Adatok mentve a Google-be!")
+    # 4. MENTÉS GOMB A LISTA VÉGÉN
+    if summary_dict:
+        if st.button(f"🚀 {tab_nev.upper()} BEKÜLDÉSE MOST", type="primary", use_container_width=True):
+            st.success(f"Adatok beküldve a Google Táblázatba! ({len(summary_dict)} tétel)")
 
 else:
     st.title("💾 Mentés és Áttekintés")
-    st.write("Itt ellenőrizheted az összesített listát beküldés előtt.")
+    st.info("Itt láthatod a még be nem küldött tételeket.")
