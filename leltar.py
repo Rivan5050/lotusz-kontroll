@@ -7,7 +7,7 @@ import requests
 # --- KONFIGURÁCIÓ ---
 ALAP_FAJL = "lotusz_alap.csv"
 # A Te saját Google híd linked beillesztve:
-SCRIPT_URL = "https://script.google.com/macros/s/16xKwjxGK0dlHZA9_Bspu7DWv7T9Na7psy5a-gI5fLYD8_Kqx6wfhAV07/exec"
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdubKmAj92ODOhGb6VeWoloC_evzS5iuYxyV9WPdM8GHd4ikmOW_TJ0j3oDVGMvBi-/exec"
 
 st.set_page_config(page_title="Lótusz Kontroll", layout="wide")
 
@@ -126,3 +126,4 @@ elif funkcio == "Zárás véglegesítése":
             if st.button("ZÁRÁS BEKÜLDÉSE"):
                 if save_to_google(z_list, "Zarasok"):
                     st.session_state.atmeneti_leltar = {}
+
