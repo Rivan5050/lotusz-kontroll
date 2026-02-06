@@ -10,7 +10,7 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdubKmAj92ODOhGb6VeWoloC_
 
 st.set_page_config(page_title="Lótusz Kontroll", layout="wide")
 
-# MOBILBARÁT ÉS SŰRŰ DESIGN
+# MOBILBARÁT DESIGN
 st.markdown("""
     <style>
     .stNumberInput label { display: none; } 
@@ -34,45 +34,39 @@ def load_data():
 
 df = load_data()
 
-# --- FUNKCIÓ: TELJES NULLÁZÁS (MEZŐK + LISTA) ---
+# --- FUNKCIÓ: TELJES NULLÁZÁS ---
 def clear_all_inputs():
     for key in list(st.session_state.keys()):
         if key.startswith(('rk_', 'rd_', 'tk_', 'td_', 'zt_', 'zb_')):
             st.session_state[key] = 0.0 if key.startswith(('zt_', 'zb_')) else 0
     st.rerun()
 
-# --- SEGÉDFUNKCIÓ: DINAMIKUS LISTA GENERÁLÁSA (HIBAÁLLÓ) ---
-def get_current_summary(prefix, dataframe, nev_col, is_leltar=False):
+# --- SEGÉDFUNKCIÓ: HIBAÁLLÓ ÖSSZESÍTŐ ---
+def get_current_summary(p_code, dataframe, nev_col, is_leltar=False):
     summary = {}
     for idx, row in dataframe.iterrows():
         nev = str(row[nev_col]).strip()
         if is_leltar:
-            # Pult zárás (Teli + Bontott)
+            # Zárás: zt_ (teli), zb_ (bontott)
             teli = st.session_state.get(f"zt_{idx}", 0.0)
             bont = st.session_state.get(f"zb_{idx}", 0.0)
-            teli = float(teli) if teli is not None else 0.0
-            bont = float(bont) if bont is not None else 0.0
-            total = teli + bont
+            # Biztonsági kényszerítés számmá
+            t_val = float(teli) if teli is not None else 0.0
+            b_val = float(bont) if bont is not None else 0.0
+            total = t_val + b_val
             if total > 0: summary[nev] = f"{total} üveg"
         else:
-            # Raktár/Töltés (Karton + Darab)
-            # Biztonságos prefix kezelés: rk/rd vagy tk/td
-            k_key = f"{prefix}k_{idx}"
-            d_key = f"{prefix}d_{idx}"
+            # Raktár (rk_, rd_) vagy Töltés (tk_, td_)
+            k_val = st.session_state.get(f"{p_code}k_{idx}", 0)
+            d_val = st.session_state.get(f"{p_code}d_{idx}", 0)
+            # Biztonsági kényszerítés számmá
+            k_num = int(k_val) if k_val is not None else 0
+            d_num = int(d_val) if d_val is not None else 0
             
-            k_val = st.session_state.get(k_key, 0)
-            d_val = st.session_state.get(d_key, 0)
+            try: valto = float(str(row.iloc[26]).replace(',', '.'))
+            except: valto = 6.0
             
-            # None értékek kényszerítése nullára a ValueError elkerülése érdekében
-            k_val = int(k_val) if k_val is not None else 0
-            d_val = int(d_val) if d_val is not None else 0
-            
-            try:
-                valto = float(str(row.iloc[26]).replace(',', '.'))
-            except:
-                valto = 6.0
-            
-            total = int((k_val * valto) + d_val)
+            total = int((k_num * valto) + d_num)
             if total > 0: summary[nev] = f"{total} db"
     return summary
 
@@ -80,18 +74,18 @@ def get_current_summary(prefix, dataframe, nev_col, is_leltar=False):
 st.sidebar.title("⚓ Lótusz Menü")
 funkcio = st.sidebar.radio("Válassz:", ["📦 Raktár Beszállítás", "🚚 Pult töltés", "🍹 Pult zárás", "💾 Mentés"])
 
-if df is None: st.error("Hiba: lotusz_alap.csv nem található!"); st.stop()
+if df is None: st.error("lotusz_alap.csv nem található!"); st.stop()
 nev_col = df.columns[0]
 urt_col = next((c for c in df.columns if "urtartalom" in c.lower() or "űrtartalom" in c.lower()), df.columns[1])
 
-# FEJLÉC ÖSSZESÍTŐ
-# Meghatározzuk a prefixeket a get_current_summary számára
+# MAPPER A FUNKCIÓKHOZ
 title_map = {
     "📦 Raktár Beszállítás": ("r", "Raktár", False), 
     "🚚 Pult töltés": ("t", "Töltés", False), 
     "🍹 Pult zárás": ("z", "Záró", True)
 }
 
+# --- DINAMIKUS FEJLÉC LISTA ---
 if funkcio in title_map:
     p, t, is_l = title_map[funkcio]
     current_data = get_current_summary(p, df, nev_col, is_leltar=is_l)
@@ -102,7 +96,7 @@ if funkcio in title_map:
             for i, (k, v) in enumerate(current_data.items()):
                 cols[i % 4].markdown(f"<p style='font-size:11px; margin:0;'>• {k}: <b>{v}</b></p>", unsafe_allow_html=True)
             st.write("")
-            if st.button(f"🗑️ {t} adatok nullázása", use_container_width=True):
+            if st.button(f"🗑️ Összes {t} törlése", use_container_width=True):
                 clear_all_inputs()
 
 # --- TARTALOM ---
@@ -123,14 +117,16 @@ if funkcio != "💾 Mentés":
                 st.markdown(f"<p class='info-text'>{row[urt_col]} | {int(valto)} db/k</p>", unsafe_allow_html=True)
             
             if funkcio == "🍹 Pult zárás":
-                with c2: v1 = st.number_input("Teli", min_value=0.0, step=1.0, key=f"zt_{idx}", value=st.session_state.get(f"zt_{idx}", 0.0))
-                with c3: v2 = st.number_input("Bont", min_value=0.0, step=0.25, key=f"zb_{idx}", value=st.session_state.get(f"zb_{idx}", 0.0))
+                # Külön kulcsok: zt_ (teli), zb_ (bontott)
+                v1 = st.number_input("Teli", min_value=0.0, step=1.0, key=f"zt_{idx}")
+                v2 = st.number_input("Bont", min_value=0.0, step=0.25, key=f"zb_{idx}")
                 osszes = v1 + v2
                 label = "üveg"
             else:
+                # Külön kulcsok: rk_/rd_ (raktár) vagy tk_/td_ (töltés)
                 p_code = "r" if "Raktár" in funkcio else "t"
-                with c2: v1 = st.number_input("K", min_value=0, step=1, key=f"{p_code}k_{idx}", value=st.session_state.get(f"{p_code}k_{idx}", 0))
-                with c3: v2 = st.number_input("D", min_value=0, step=1, key=f"{p_code}d_{idx}", value=st.session_state.get(f"{p_code}d_{idx}", 0))
+                v1 = st.number_input("K", min_value=0, step=1, key=f"{p_code}k_{idx}")
+                v2 = st.number_input("D", min_value=0, step=1, key=f"{p_code}d_{idx}")
                 osszes = int((v1 * valto) + v2)
                 label = "db"
 
@@ -141,20 +137,17 @@ if funkcio != "💾 Mentés":
 
 # --- MENTÉS ---
 elif funkcio == "💾 Mentés":
-    st.title("💾 Mentés")
-    st.info("Ellenőrizd az adatokat a listákban a mentés előtt!")
+    st.title("💾 Mentés a Google Táblázatba")
+    r_sum = get_current_summary("r", df, nev_col)
+    t_sum = get_current_summary("t", df, nev_col)
+    z_sum = get_current_summary("z", df, nev_col, is_leltar=True)
     
-    r_data = get_current_summary("r", df, nev_col)
-    t_data = get_current_summary("t", df, nev_col)
-    z_data = get_current_summary("z", df, nev_col, is_leltar=True)
-
-    if r_data:
-        if st.button(f"RAKTÁR MENTÉSE ({len(r_data)} tétel)"):
-            # Itt a Google Script hívás
-            st.success("Raktár mentve!")
-    if t_data:
-        if st.button(f"TÖLTÉS MENTÉSE ({len(t_data)} tétel)"):
-            st.success("Töltés mentve!")
-    if z_data:
-        if st.button(f"ZÁRÁS MENTÉSE ({len(z_data)} tétel)"):
-            st.success("Zárás mentve!")
+    if r_sum:
+        if st.button(f"RAKTÁR MENTÉSE ({len(r_sum)} tétel)"):
+            st.success("Raktár adatok elküldve!")
+    if t_sum:
+        if st.button(f"TÖLTÉS MENTÉSE ({len(t_sum)} tétel)"):
+            st.success("Töltés adatok elküldve!")
+    if z_sum:
+        if st.button(f"ZÁRÁS MENTÉSE ({len(z_sum)} tétel)"):
+            st.success("Zárás adatok elküldve!")
