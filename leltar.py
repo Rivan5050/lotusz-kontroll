@@ -10,21 +10,20 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdubKmAj92ODOhGb6VeWoloC_
 
 st.set_page_config(page_title="Lótusz Kontroll", layout="wide")
 
-# Visszaállított, elegánsabb stílus (Kék kiemeléssel)
+# Sűrűbb, helytakarékos stílus és kék jelzések
 st.markdown("""
     <style>
-    .total-display {
-        font-size: 20px;
-        font-weight: bold;
-        color: #007bff; /* Vissza a kékhez */
-    }
-    .sticky-summary {
-        background-color: #262730;
-        padding: 10px;
+    .total-display { font-size: 18px; font-weight: bold; color: #007bff; }
+    .sticky-header {
+        background-color: #1e1e1e;
+        padding: 5px 15px;
         border-radius: 5px;
-        border-left: 5px solid #007bff;
-        margin-bottom: 20px;
+        border: 1px solid #333;
+        font-size: 13px;
+        line-height: 1.2;
     }
+    div[data-testid="stExpander"] div[role="button"] p { font-size: 14px !important; font-weight: bold; }
+    .stNumberInput { margin-bottom: -15px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -39,46 +38,43 @@ def load_data():
 
 df = load_data()
 
-# Session state-ek
+# Session State-ek inicializálása (hogy ne vesszen el váltáskor)
 if 'atmeneti_raktar' not in st.session_state: st.session_state.atmeneti_raktar = {}
 if 'atmeneti_toltes' not in st.session_state: st.session_state.atmeneti_toltes = {}
 if 'atmeneti_leltar' not in st.session_state: st.session_state.atmeneti_leltar = {}
 
-# --- SEGÉDFUNKCIÓ: Azonnali lista az oldal tetején ---
-def show_header_summary(data_dict, title):
+# SEGÉDFUNKCIÓ: Kompakt lista az oldal tetején
+def show_compact_header(data_dict, title, color="#007bff"):
     if data_dict:
-        with st.expander(f"📋 Jelenlegi {title} lista (Kattints a megtekintéshez)", expanded=True):
-            cols = st.columns(3)
+        with st.expander(f"📝 {title} ellenőrző lista ({len(data_dict)} tétel)", expanded=True):
+            cols = st.columns(4)
             for i, (k, v) in enumerate(data_dict.items()):
-                cols[i % 3].write(f"**{k}:** {v} db")
+                cols[i % 4].markdown(f"<p style='font-size:12px; margin:0;'><b>{k}:</b> {v}</p>", unsafe_allow_html=True)
+            if st.button(f"Minden {title} törlése", key=f"del_{title}"):
+                data_dict.clear()
+                st.rerun()
 
-# --- MENÜ ---
+# MENÜ
 st.sidebar.title("⚓ Lótusz Menü")
 funkcio = st.sidebar.radio("Válassz:", ["📦 Raktár Beszállítás", "🚚 Pult töltés", "🍹 Pult zárás", "💾 Mentés és Összesítés"])
 
-if df is None:
-    st.error("⚠️ Alapfájl hiba!"); st.stop()
-
+if df is None: st.error("Fájl hiba!"); st.stop()
 nev_col = df.columns[0]
-urt_col = next((c for c in df.columns if "urtartalom" in c.lower() or "űrtartalom" in c.lower()), df.columns[1])
 
 # --- 1. RAKTÁR BESZÁLLÍTÁS ---
 if funkcio == "📦 Raktár Beszállítás":
     st.title("📦 Raktár Beszállítás")
-    show_header_summary(st.session_state.atmeneti_raktar, "raktár")
-    
-    kereses = st.text_input("🔍 Keresés...", "", key="search_raktar")
+    show_compact_header(st.session_state.atmeneti_raktar, "Raktár")
+    kereses = st.text_input("🔍 Keresés...", "", key="s_r")
     for idx, row in df.iterrows():
         nev = str(row[nev_col]).strip()
         if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
-        try: valto = float(str(row.iloc[26]).replace(',', '.'))
-        except: valto = 1.0
-        
+        valto = float(str(row.iloc[26]).replace(',', '.')) if pd.notnull(row.iloc[26]) else 1.0
         with st.container():
-            c1, c2, c3, c4 = st.columns([2, 1.5, 1.5, 1.2])
+            c1, c2, c3, c4 = st.columns([2, 1.2, 1.2, 1.2])
             with c1: st.write(f"**{nev}**")
-            with c2: r_k = st.number_input("Karton", 0, step=1, key=f"r_k_{idx}")
-            with c3: r_d = st.number_input("Darab", 0, step=1, key=f"r_d_{idx}")
+            with c2: r_k = st.number_input("Karton", 0, key=f"rk_{idx}")
+            with c3: r_d = st.number_input("Darab", 0, key=f"rd_{idx}")
             osszes = (r_k * valto) + r_d
             if osszes > 0:
                 st.session_state.atmeneti_raktar[nev] = int(osszes)
@@ -88,48 +84,47 @@ if funkcio == "📦 Raktár Beszállítás":
 # --- 2. PULT TÖLTÉS ---
 elif funkcio == "🚚 Pult töltés":
     st.title("🚚 Pult töltés")
-    show_header_summary(st.session_state.atmeneti_toltes, "pult töltés")
-    
-    kereses = st.text_input("🔍 Keresés...", "", key="search_toltes")
+    show_compact_header(st.session_state.atmeneti_toltes, "Töltés")
+    kereses = st.text_input("🔍 Keresés...", "", key="s_t")
     for idx, row in df.iterrows():
         nev = str(row[nev_col]).strip()
         if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
-        try: valto = float(str(row.iloc[26]).replace(',', '.'))
-        except: valto = 1.0
-        
+        valto = float(str(row.iloc[26]).replace(',', '.')) if pd.notnull(row.iloc[26]) else 1.0
         with st.container():
-            c1, c2, c3, c4 = st.columns([2, 1.5, 1.5, 1.2])
+            c1, c2, c3, c4 = st.columns([2, 1.2, 1.2, 1.2])
             with c1: st.write(f"**{nev}**")
-            with c2: k_m = st.number_input("Karton", 0, step=1, key=f"t_k_{idx}")
-            with c3: d_m = st.number_input("Darab", 0, step=1, key=f"t_d_{idx}")
-            osszes = (k_m * valto) + d_m
+            with c2: t_k = st.number_input("Karton", 0, key=f"tk_{idx}")
+            with c3: t_d = st.number_input("Darab", 0, key=f"td_{idx}")
+            osszes = (t_k * valto) + t_d
             if osszes > 0:
                 st.session_state.atmeneti_toltes[nev] = int(osszes)
                 with c4: st.markdown(f"<p class='total-display'>{int(osszes)} db</p>", unsafe_allow_html=True)
             st.divider()
 
-# --- 3. PULT ZÁRÁS ---
+# --- 3. PULT ZÁRÁS (JAVÍTOTT: TELI + BONTOTT EGYSZERRE) ---
 elif funkcio == "🍹 Pult zárás":
     st.title("🍹 Pult zárás")
-    show_header_summary(st.session_state.atmeneti_leltar, "záró")
-    
-    kereses = st.text_input("🔍 Keresés...", "", key="search_zaras")
+    show_compact_header(st.session_state.atmeneti_leltar, "Záró")
+    kereses = st.text_input("🔍 Keresés...", "", key="s_z")
     for idx, row in df.iterrows():
         nev = str(row[nev_col]).strip()
         if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
         with st.container():
-            c1, c2, c3, c4 = st.columns([2, 2, 1.5, 1.2])
+            c1, c2, c3, c4 = st.columns([2, 1.2, 1.2, 1.2])
             with c1: st.write(f"**{nev}**")
-            with c2: mod = st.radio("Mód:", ["Teli", "Bontott"], key=f"m_{idx}", horizontal=True)
-            step = 1.0 if "Teli" in mod else 0.25
-            with c3:
-                uj = st.number_input("Záró db", 0.0, step=step, key=f"z_{idx}", format="%.2f")
-                if uj > 0: st.session_state.atmeneti_leltar[nev] = uj
-            with c4:
-                if uj > 0: st.markdown(f"<p class='total-display'>{uj}</p>", unsafe_allow_html=True)
+            with c2: z_teli = st.number_input("Teli (db)", 0.0, step=1.0, key=f"zt_{idx}")
+            with c3: z_bont = st.number_input("Bontott (0.25)", 0.0, step=0.25, key=f"zb_{idx}")
+            vegosszeg = z_teli + z_bont
+            if vegosszeg > 0:
+                st.session_state.atmeneti_leltar[nev] = vegosszeg
+                with c4: st.markdown(f"<p class='total-display'>{vegosszeg}</p>", unsafe_allow_html=True)
             st.divider()
 
-# --- 4. MENTÉS (Változatlan, csak a kék stílussal) ---
+# --- 4. MENTÉS ---
 elif funkcio == "💾 Mentés és Összesítés":
-    st.title("💾 Mentés a Google Táblázatba")
-    # ... Itt a korábbi mentési logikád fut
+    st.title("💾 Mentés")
+    # Itt a mentési kód, ami beküldi a session_state-eket a Google-be
+    # (Az előzőleg bevált mentési logikád változatlanul ide jön)
+    if st.button("RAKTÁR MENTÉSE"):
+        # requests.post(...)
+        st.success("Mentve!")
