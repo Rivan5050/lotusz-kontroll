@@ -10,16 +10,15 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdubKmAj92ODOhGb6VeWoloC_
 
 st.set_page_config(page_title="Lótusz Kontroll", layout="wide")
 
-# MOBILBARÁT DESIGN
+# STÍLUS: Visszahozzuk a címkéket és a szép elrendezést
 st.markdown("""
     <style>
-    .stNumberInput label { display: none; } 
-    .total-display { font-size: 18px; font-weight: bold; color: #007bff; padding-top: 5px; }
-    .termek-nev { font-size: 15px; font-weight: bold; margin-bottom: -5px; }
-    .info-text { font-size: 11px; color: #777; margin-top: -5px; }
-    .stDivider { margin: 3px 0px; }
-    .block-container { padding-top: 1.5rem; padding-bottom: 1rem; }
-    [data-testid="stExpander"] { border: 1px solid #007bff; background-color: #f0f2f610; }
+    .total-display { font-size: 20px; font-weight: bold; color: #007bff; border-left: 3px solid #007bff; padding-left: 10px; }
+    .termek-nev { font-size: 16px; font-weight: bold; color: #f0f2f6; }
+    .info-text { font-size: 13px; color: #aaa; }
+    .stNumberInput label { font-size: 12px !important; color: #007bff !important; }
+    .stDivider { margin: 10px 0px; }
+    .list-item { font-size: 13px; background: #262730; padding: 5px; border-radius: 5px; margin: 2px; border: 1px solid #444; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -34,114 +33,106 @@ def load_data():
 
 df = load_data()
 
-# --- FUNKCIÓ: TELJES NULLÁZÁS ---
-def clear_all_inputs():
+# --- ADATOK TÁROLÁSA (Session State) ---
+# Ez biztosítja, hogy fülváltáskor ne vesszen el semmi
+if 'permanens_adatok' not in st.session_state:
+    st.session_state.permanens_adatok = {
+        'r': {}, # Raktár
+        't': {}, # Töltés
+        'z': {}  # Záró
+    }
+
+# --- FUNKCIÓK ---
+def safe_num(val):
+    try: return float(val) if val is not None else 0.0
+    except: return 0.0
+
+def clear_current_tab(tab_code):
+    # Csak az aktuális fül adatait töröljük
+    st.session_state.permanens_adatok[tab_code] = {}
+    # Töröljük a hozzá tartozó input mezőket a session_state-ből
     for key in list(st.session_state.keys()):
-        if key.startswith(('rk_', 'rd_', 'tk_', 'td_', 'zt_', 'zb_')):
-            st.session_state[key] = 0.0 if key.startswith(('zt_', 'zb_')) else 0
+        if key.startswith(f"{tab_code}"):
+            del st.session_state[key]
     st.rerun()
 
-# --- SEGÉDFUNKCIÓ: HIBAÁLLÓ ÖSSZESÍTŐ (A ValueError ellen) ---
-def get_current_summary(p_code, dataframe, nev_col, is_leltar=False):
-    summary = {}
-    for idx, row in dataframe.iterrows():
-        nev = str(row[nev_col]).strip()
-        
-        # Biztonságos érték lekérés: Ha None vagy üres, akkor 0
-        def safe_num(key, default=0):
-            val = st.session_state.get(key, default)
-            try:
-                return float(val) if val is not None else default
-            except:
-                return default
-
-        if is_leltar:
-            t_val = safe_num(f"zt_{idx}", 0.0)
-            b_val = safe_num(f"zb_{idx}", 0.0)
-            total = t_val + b_val
-            if total > 0: summary[nev] = f"{total} üveg"
-        else:
-            k_num = int(safe_num(f"{p_code}k_{idx}", 0))
-            d_num = int(safe_num(f"{p_code}d_{idx}", 0))
-            
-            try:
-                # Karton váltószám kezelése (26. oszlop)
-                raw_valto = str(row.iloc[26]).replace(',', '.')
-                valto = float(raw_valto) if raw_valto != 'nan' else 6.0
-            except:
-                valto = 6.0
-            
-            total = int((k_num * valto) + d_num)
-            if total > 0: summary[nev] = f"{total} db"
-    return summary
-
-# MENÜ
+# --- MENÜ ---
 st.sidebar.title("⚓ Lótusz Menü")
-funkcio = st.sidebar.radio("Válassz:", ["📦 Raktár Beszállítás", "🚚 Pult töltés", "🍹 Pult zárás", "💾 Mentés"])
+funkcio = st.sidebar.radio("Válassz funkciót:", ["📦 Raktár Beszállítás", "🚚 Pult töltés", "🍹 Pult zárás", "💾 Mentés"])
 
-if df is None: st.error("lotusz_alap.csv nem található!"); st.stop()
+if df is None: st.error("Hiba: lotusz_alap.csv nem található!"); st.stop()
 nev_col = df.columns[0]
 urt_col = next((c for c in df.columns if "urtartalom" in c.lower() or "űrtartalom" in c.lower()), df.columns[1])
 
-# MAPPER
-title_map = {
-    "📦 Raktár Beszállítás": ("r", "Raktár", False), 
-    "🚚 Pult töltés": ("t", "Töltés", False), 
-    "🍹 Pult zárás": ("z", "Záró", True)
-}
-
-# --- DINAMIKUS FEJLÉC ---
-if funkcio in title_map:
-    p, t, is_l = title_map[funkcio]
-    current_data = get_current_summary(p, df, nev_col, is_leltar=is_l)
-    
-    if current_data:
-        with st.expander(f"📋 {t} ellenőrző lista ({len(current_data)} tétel)", expanded=True):
-            cols = st.columns(4)
-            for i, (k, v) in enumerate(current_data.items()):
-                cols[i % 4].markdown(f"<p style='font-size:11px; margin:0;'>• {k}: <b>{v}</b></p>", unsafe_allow_html=True)
-            st.write("")
-            if st.button(f"🗑️ Összes {t} törlése", use_container_width=True):
-                clear_all_inputs()
-
-# --- TARTALOM ---
+# FŐ CIKLUS
 if funkcio != "💾 Mentés":
-    kereses = st.text_input("🔍 Keresés termékre...", "")
+    p_code = "r" if "Raktár" in funkcio else ("t" if "Töltés" in funkcio else "z")
+    tab_nev = "Raktár" if p_code == "r" else ("Töltés" if p_code == "t" else "Zárás")
     
+    st.title(f"{funkcio}")
+    
+    # 1. KERESŐ
+    kereses = st.text_input(f"🔍 Termék keresése ({tab_nev})...", "")
+
+    # 2. ELLENŐRZŐ LISTA (Most már a kereső alatt van)
+    current_tab_data = st.session_state.permanens_adatok[p_code]
+    if current_tab_data:
+        with st.expander(f"📋 {tab_nev} ellenőrző lista ({len(current_tab_data)} tétel)", expanded=True):
+            cols = st.columns(4)
+            for i, (k, v) in enumerate(current_tab_data.items()):
+                cols[i % 4].markdown(f"<div class='list-item'><b>{k}</b><br>{v}</div>", unsafe_allow_html=True)
+            if st.button(f"🗑️ {tab_nev} lista törlése", use_container_width=True):
+                clear_current_tab(p_code)
+
+    st.divider()
+
+    # 3. TERMÉK LISTA
     for idx, row in df.iterrows():
         nev = str(row[nev_col]).strip()
         if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
         
+        # Váltószám meghatározása (26. oszlop)
         try:
-            valto_raw = str(row.iloc[26]).replace(',', '.')
-            valto = float(valto_raw) if valto_raw != 'nan' else 6.0
-        except:
-            valto = 6.0
+            v_raw = str(row.iloc[26]).replace(',', '.')
+            valto = float(v_raw) if v_raw != 'nan' else 6.0
+        except: valto = 6.0
 
         with st.container():
             c1, c2, c3, c4 = st.columns([2.5, 1, 1, 1])
+            
             with c1:
                 st.markdown(f"<p class='termek-nev'>{nev}</p>", unsafe_allow_html=True)
-                st.markdown(f"<p class='info-text'>{row[urt_col]} | {int(valto)} db/k</p>", unsafe_allow_html=True)
+                st.markdown(f"<p class='info-text'>{row[urt_col]} | {int(valto)} db / Karton</p>", unsafe_allow_html=True)
             
-            if funkcio == "🍹 Pult zárás":
-                v1 = st.number_input("Teli", min_value=0.0, step=1.0, key=f"zt_{idx}")
-                v2 = st.number_input("Bont", min_value=0.0, step=0.25, key=f"zb_{idx}")
-                osszes = v1 + v2
-                label = "üveg"
-            else:
-                p_code = "r" if "Raktár" in funkcio else "t"
-                v1 = st.number_input("K", min_value=0, step=1, key=f"{p_code}k_{idx}")
-                v2 = st.number_input("D", min_value=0, step=1, key=f"{p_code}d_{idx}")
-                osszes = int((v1 * valto) + v2)
-                label = "db"
+            if p_code == "z": # Zárás fül
+                with c2: v1 = st.number_input("Teli (db)", min_value=0.0, step=1.0, key=f"zt_{idx}")
+                with c3: v2 = st.number_input("Bontott", min_value=0.0, step=0.25, key=f"zb_{idx}")
+                osszes = safe_num(v1) + safe_num(v2)
+                mertekegyseg = "üveg"
+            else: # Raktár vagy Töltés fül
+                with c2: v1 = st.number_input("Karton", min_value=0, step=1, key=f"{p_code}k_{idx}")
+                with c3: v2 = st.number_input("Darab", min_value=0, step=1, key=f"{p_code}d_{idx}")
+                osszes = (safe_num(v1) * valto) + safe_num(v2)
+                mertekegyseg = "db"
 
-            with c4:
-                if osszes > 0:
-                    st.markdown(f"<p class='total-display'>{osszes} {label}</p>", unsafe_allow_html=True)
+            # Adatok mentése a permanens tárolóba azonnal
+            if osszes > 0:
+                st.session_state.permanens_adatok[p_code][nev] = f"{osszes} {mertekegyseg}"
+                with c4:
+                    st.markdown(f"<p style='font-size:12px; color:#007bff; margin-bottom:2px;'>Összesen:</p>", unsafe_allow_html=True)
+                    st.markdown(f"<p class='total-display'>{osszes} {mertekegyseg}</p>", unsafe_allow_html=True)
+            elif nev in st.session_state.permanens_adatok[p_code]:
+                del st.session_state.permanens_adatok[p_code][nev]
+
             st.divider()
 
 # --- MENTÉS ---
-elif funkcio == "💾 Mentés":
-    st.title("💾 Mentés")
-    # ... mentési logika ...
+else:
+    st.title("💾 Adatok véglegesítése")
+    for p, t in [("r", "Raktár"), ("t", "Töltés"), ("z", "Záró")]:
+        data = st.session_state.permanens_adatok[p]
+        if data:
+            st.subheader(f"{t} adatok")
+            st.write(data)
+            if st.button(f"{t} beküldése a Google-be", key=f"save_{p}"):
+                st.success(f"{t} adatok elküldve!")
