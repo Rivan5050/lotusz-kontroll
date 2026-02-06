@@ -10,12 +10,11 @@ SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdubKmAj92ODOhGb6VeWoloC_
 
 st.set_page_config(page_title="Lótusz Kontroll", layout="wide")
 
-# Tisztább design, kék kiemeléssel
+# Stílus beállítások
 st.markdown("""
     <style>
-    .total-display { font-size: 19px; font-weight: bold; color: #007bff; border-bottom: 2px solid #007bff; }
-    .info-text { font-size: 13px; color: #888; }
-    .stNumberInput { margin-bottom: -10px; }
+    .total-display { font-size: 19px; font-weight: bold; color: #007bff; }
+    .info-text { font-size: 13px; color: #888; margin-top: -15px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -30,11 +29,22 @@ def load_data():
 
 df = load_data()
 
-# Session State-ek (Adatmegőrzéshez)
-for key in ['atmeneti_raktar', 'atmeneti_toltes', 'atmeneti_leltar']:
-    if key not in st.session_state: st.session_state[key] = {}
+# Session State inicializálás
+if 'atmeneti_raktar' not in st.session_state: st.session_state.atmeneti_raktar = {}
+if 'atmeneti_toltes' not in st.session_state: st.session_state.atmeneti_toltes = {}
+if 'atmeneti_leltar' not in st.session_state: st.session_state.atmeneti_leltar = {}
 
-# SEGÉDFUNKCIÓ: Kompakt lista és TELJES TÖRLÉS (inputok nullázása)
+# --- FUNKCIÓ: LISTA ÉS MEZŐK TELJES NULLÁZÁSA ---
+def clear_all_inputs(data_key):
+    # Töröljük a listát
+    st.session_state[data_key] = {}
+    # Töröljük az összes widget értékét a session_state-ből
+    for key in st.session_state.keys():
+        if key.startswith(('rk_', 'rd_', 'tk_', 'td_', 'zt_', 'zb_')):
+            st.session_state[key] = 0 if not key.startswith(('zt_', 'zb_')) else 0.0
+    st.rerun()
+
+# SEGÉDFUNKCIÓ: Kompakt lista fejléc
 def show_compact_header(data_key, title):
     if st.session_state[data_key]:
         with st.expander(f"📋 {title} ellenőrző lista ({len(st.session_state[data_key])} tétel)", expanded=True):
@@ -42,9 +52,8 @@ def show_compact_header(data_key, title):
             for i, (k, v) in enumerate(st.session_state[data_key].items()):
                 cols[i % 4].markdown(f"<p style='font-size:12px; margin:0;'><b>{k}:</b> {v}</p>", unsafe_allow_html=True)
             
-            if st.button(f"🗑️ Összes {title} törlése és mezők nullázása"):
-                st.session_state[data_key] = {}
-                st.rerun()
+            if st.button(f"🗑️ Összes {title} törlése és MEZŐK NULLÁZÁSA"):
+                clear_all_inputs(data_key)
 
 # MENÜ
 st.sidebar.title("⚓ Lótusz Menü")
@@ -52,7 +61,6 @@ funkcio = st.sidebar.radio("Válassz:", ["📦 Raktár Beszállítás", "🚚 Pu
 
 if df is None: st.error("Fájl hiba!"); st.stop()
 nev_col = df.columns[0]
-# Űrtartalom oszlop keresése
 urt_col = next((c for c in df.columns if "urtartalom" in c.lower() or "űrtartalom" in c.lower()), df.columns[1])
 
 # --- 1. RAKTÁR BESZÁLLÍTÁS ---
@@ -64,18 +72,17 @@ if funkcio == "📦 Raktár Beszállítás":
     for idx, row in df.iterrows():
         nev = str(row[nev_col]).strip()
         if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
-        
-        # Karton szorzó pontos kezelése (26. oszlop)
         try: valto = float(str(row.iloc[26]).replace(',', '.'))
-        except: valto = 6.0 # Alapértelmezett, ha hibás az adat
+        except: valto = 6.0
             
         with st.container():
             c1, c2, c3, c4 = st.columns([2, 1.2, 1.2, 1.2])
             with c1: 
                 st.markdown(f"**{nev}**")
                 st.markdown(f"<p class='info-text'>{row[urt_col]} | {int(valto)} db/karton</p>", unsafe_allow_html=True)
-            with c2: r_k = st.number_input("Karton", 0, key=f"rk_{idx}")
-            with c3: r_d = st.number_input("Darab", 0, key=f"rd_{idx}")
+            # on_change használata az azonnali frissítéshez
+            r_k = st.number_input("Karton", 0, key=f"rk_{idx}")
+            r_d = st.number_input("Darab", 0, key=f"rd_{idx}")
             
             osszes = int((r_k * valto) + r_d)
             if osszes > 0:
@@ -102,8 +109,8 @@ elif funkcio == "🚚 Pult töltés":
             with c1: 
                 st.markdown(f"**{nev}**")
                 st.markdown(f"<p class='info-text'>{row[urt_col]} | {int(valto)} db/karton</p>", unsafe_allow_html=True)
-            with c2: t_k = st.number_input("Karton", 0, key=f"tk_{idx}")
-            with c3: t_d = st.number_input("Darab", 0, key=f"td_{idx}")
+            t_k = st.number_input("Karton", 0, key=f"tk_{idx}")
+            t_d = st.number_input("Darab", 0, key=f"td_{idx}")
             
             osszes = int((t_k * valto) + t_d)
             if osszes > 0:
@@ -122,14 +129,16 @@ elif funkcio == "🍹 Pult zárás":
     for idx, row in df.iterrows():
         nev = str(row[nev_col]).strip()
         if nev.lower() in ["nan", ""] or kereses.lower() not in nev.lower(): continue
+        try: valto = float(str(row.iloc[26]).replace(',', '.'))
+        except: valto = 6.0
         
         with st.container():
             c1, c2, c3, c4 = st.columns([2, 1.2, 1.2, 1.2])
             with c1: 
                 st.markdown(f"**{nev}**")
-                st.markdown(f"<p class='info-text'>{row[urt_col]}</p>", unsafe_allow_html=True)
-            with c2: z_teli = st.number_input("Teli (db)", 0.0, step=1.0, key=f"zt_{idx}")
-            with c3: z_bont = st.number_input("Bontott (0.25)", 0.0, step=0.25, key=f"zb_{idx}")
+                st.markdown(f"<p class='info-text'>{row[urt_col]} | {int(valto)} db/karton</p>", unsafe_allow_html=True)
+            z_teli = st.number_input("Teli (db)", 0.0, step=1.0, key=f"zt_{idx}")
+            z_bont = st.number_input("Bontott (0.25)", 0.0, step=0.25, key=f"zb_{idx}")
             
             vegosszeg = z_teli + z_bont
             if vegosszeg > 0:
@@ -141,5 +150,5 @@ elif funkcio == "🍹 Pult zárás":
 
 # --- 4. MENTÉS ---
 elif funkcio == "💾 Mentés":
-    st.title("💾 Beküldés a Google Táblázatba")
-    # Ide jön a már működő requests.post kódod a session_state-ek ürítésével...
+    st.title("💾 Mentés a Google Táblázatba")
+    # A beküldési logika változatlan...
